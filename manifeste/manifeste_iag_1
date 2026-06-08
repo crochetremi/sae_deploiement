@@ -1,0 +1,15 @@
+# Nous avons utilisé l'IAg dans trois buts distincts :
+
+## 1. Diagnostic technique et débogage avancé
+L'IA a été un outil crucial pour analyser des comportements inattendus de notre infrastructure, notamment face à des erreurs silencieuses ou des problèmes de cache.
+* **Résolution de l'Erreur 500 :** L'application BookStack refusait de se connecter à la base de données. En soumettant les logs du conteneur (`docker logs`) à l'IA, nous avons pu identifier que l'image LinuxServer conservait un fichier `.env` obsolète avec les valeurs par défaut (`database_username`). 
+* **Compréhension de Docker :** L'IA nous a aidés à comprendre pourquoi la commande `docker compose down -v` ne suffisait pas toujours, et nous a orientés vers une solution robuste (injection des variables natives `DB_USERNAME` dans le YAML et renommage des volumes) pour forcer un déploiement propre.
+
+## 2. Analyse et correction de syntaxe (LDAP)
+Nous nous sommes servis de l'IA pour confronter les instructions du sujet avec la documentation officielle de l'application.
+* **Filtre de recherche LDAP :** L'IA nous a confirmé que la variable `(uid=${input})` demandée par le sujet n'était pas reconnue par BookStack, qui attendait `(uid=${user})`. 
+* **Échappement de caractères :** Elle nous a également expliqué la nécessité d'utiliser le double dollar (`$$`) dans le fichier `docker-compose.yml` pour éviter que Docker n'interprète la variable LDAP comme l'une de ses propres variables d'environnement.
+
+## 3. Structuration et lisibilité de la documentation
+L'IA a joué le rôle de relecteur et de formateur pour nos livrables finaux.
+* **Mise en forme Markdown :** Nous avons fourni nos brouillons et nos notes brutes à l'IA pour qu'elle nous aide à structurer un fichier `README.md` propre, lisible et conforme aux attentes du sujet.
