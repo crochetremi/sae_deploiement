@@ -8,41 +8,57 @@ services:
       - MYSQL_USER=bookstack
       - MYSQL_PASSWORD=secret_password
     volumes:
-      - bookstack_db_data_v2:/var/lib/mysql
+      - bookstack_db_data_vanilla:/var/lib/mysql
     restart: unless-stopped
 
+  openldap:
+    image: osixia/openldap:1.5.0
+    container_name: bookstack_ldap
+    ports:
+      - '389:389'
+    environment:
+      - LDAP_ORGANISATION=IUT Org
+      - LDAP_DOMAIN=iut.org
+      - LDAP_ADMIN_PASSWORD=adminpassword
+    volumes:
+      - openldap_conf_data_vanilla:/etc/ldap/slapd.d
+      - openldap_db_data_vanilla:/var/lib/ldap
+    restart: unless-stopped
+  
   bookstack:
     image: lscr.io/linuxserver/bookstack
     container_name: bookstack_app
     environment:
-      - APP_URL=http://localhost:6875
-      - APP_KEY=base64:RZ5qld9TTcFqK1qy7ajUoTLiMEay6UuP687IXK+zjqQ=
+      - APP_URL=http://localhost:8080
+      - APP_KEY=base64:YGbrwK+CsAKb1yyyD6LTVQy/QbvY7OTjBTaeZgObfvU=
       - DB_HOST=mariadb
-      # --- Variables attendues par le script LinuxServer ---
       - DB_USER=bookstack
       - DB_PASS=secret_password
       - DB_DATABASE=bookstackapp
       - DB_USERNAME=bookstack
       - DB_PASSWORD=secret_password
-      # --- Configuration LDAP ---
+      # --- Configuration LDAP Locale ---
       - AUTH_METHOD=ldap
-      - LDAP_SERVER=ldap://ldap.forumsys.com
-      - LDAP_BASE_DN=dc=example,dc=com
-      - LDAP_DN=cn=read-only-admin,dc=example,dc=com
-      - LDAP_PASS=password
+      - LDAP_SERVER=ldap://openldap:389
+      - LDAP_BASE_DN=dc=iut,dc=org
+      - LDAP_DN=cn=admin,dc=iut,dc=org
+      - LDAP_PASS=adminpassword
       - LDAP_USER_FILTER=(uid=$${user})
       - LDAP_ID_ATTRIBUTE=uid
       - LDAP_EMAIL_ATTRIBUTE=mail
       - LDAP_DISPLAY_NAME_ATTRIBUTE=cn
       - LDAP_VERSION=3
     volumes:
-      - bookstack_app_data_v2:/config
+      - bookstack_app_data_vanilla:/config
     ports:
-      - 6875:80
+      - 8080:80
     restart: unless-stopped
     depends_on:
       - mariadb
+      - openldap
 
 volumes:
-  bookstack_db_data_v2:
-  bookstack_app_data_v2:
+  bookstack_db_data_vanilla:
+  bookstack_app_data_vanilla:
+  openldap_conf_data_vanilla:
+  openldap_db_data_vanilla:
