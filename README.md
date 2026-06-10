@@ -3,30 +3,25 @@
 
 ---
 
-## C'est quoi LDAP ?
+## 1. C'est quoi LDAP ?
 
-LDAP (Lightweight Directory Access Protocol) est un protocole qui permet d'accéder à un annuaire centralisé d'utilisateurs. Concrètement, c'est ce qui permet à une entreprise d'avoir un seul compte par personne, utilisable sur toutes les applications internes — c'est ce qu'on appelle le SSO (Single Sign-On).
+LDAP (Lightweight Directory Access Protocol) est un protocole qui permet d'accéder à un annuaire centralisé d'utilisateurs. Concrètement, c'est ce qui permet à une entreprise d'avoir un seul compte par personne, utilisable sur toutes les applications internes — c'est le principe du SSO (Single Sign-On).
 
-L'annuaire est organisé comme un arbre (DIT - Directory Information Tree). Chaque utilisateur est une entrée avec des attributs (nom, e-mail, identifiant...) et est identifié par un DN (Distinguished Name) unique, par exemple `uid=einstein,dc=example,dc=com`. Pour interroger l'annuaire, on effectue d'abord un **bind** (authentification), puis une **search** (recherche d'entrées).
+L'annuaire est organisé comme un arbre (DIT - Directory Information Tree). Chaque utilisateur est une entrée avec des attributs (nom, e-mail, identifiant...) et est identifié par un DN (Distinguished Name) unique, par exemple `uid=einstein,dc=iut,dc=org`. Pour interroger l'annuaire, on effectue d'abord un **bind** (authentification de service), puis un **search** (recherche d'entrées), et enfin un nouveau **bind** pour vérifier le mot de passe de l'utilisateur.
 
-LDAP fonctionne traditionnellement sur le port 389 (non chiffré) ou sur le port 636 avec TLS (LDAPS).
 
----
+## 2. Architecture de notre Déploiement (Infrastructure Locale)
 
-## Déploiement et Configuration
+Dans un premier temps, nous avions relié BookStack au serveur de test public `ldap.forumsys.com`. Pour garantir la sécurité, la robustesse et l'autonomie totale de notre application, nous avons finalement fait évoluer notre infrastructure en déployant **notre propre annuaire LDAP local**.
 
-L'application s'appuie sur deux conteneurs Docker configurés dans notre fichier `docker-compose.yml` : BookStack (l'application web PHP/Laravel) et MariaDB (la base de données). L'intégralité de la configuration, y compris le raccordement LDAP, est gérée via les variables d'environnement de ce fichier.
+Notre fichier `docker-compose.yml` orchestre désormais 4 conteneurs :
 
-### 1. Générer la clé applicative (Optionnel si déjà définie)
-La variable `APP_KEY` est requise pour le chiffrement de BookStack. Si vous devez en générer une nouvelle, utilisez la commande suivante avant de lancer le déploiement :
-```bash
-docker run -it --rm --entrypoint /bin/bash lscr.io/linuxserver/bookstack:latest appkey
+1. **MariaDB** : La base de données relationnelle pour BookStack.
+2. **BookStack** : L'application web collaborative (accessible sur le port `8080`).
+3. **OpenLDAP** (`osixia/openldap`) : Notre serveur d'annuaire local, configuré sur le domaine `dc=iut,dc=org`.
+4. **phpLDAPadmin** (`osixia/phpldapadmin`) : Une interface web d'administration pour gérer notre annuaire facilement (accessible sur le port `8081`).
 
-```
-
-Il suffit ensuite de coller cette clé dans la variable `APP_KEY` du fichier `docker-compose.yml`.
-
-### 2. Lancer l'infrastructure
+### Lancer l'infrastructure
 
 Toute l'infrastructure se lance avec une seule commande :
 
@@ -35,41 +30,52 @@ docker compose up -d
 
 ```
 
-L'interface est ensuite disponible sur [http://localhost:6875](https://www.google.com/search?q=http://localhost:6875).
+* **BookStack :** `http://localhost:8080`
+* **phpLDAPadmin :** `http://localhost:8081`
 
----
 
-## Raccordement LDAP — Observations et Difficultés rencontrées
 
-Nous avons utilisé le serveur de test public `ldap.forumsys.com` pour valider notre intégration. Pour explorer sa structure en ligne de commande, nous avons utilisé `ldapsearch` :
+## 3. Administration de l'annuaire et des Utilisateurs
+
+Contrairement au serveur public, notre image locale démarre avec un annuaire vierge. Nous avons pu le peupler de deux manières :
+
+**Méthode 1 : En ligne de commande (CLI)**
+Nous avons injecté des utilisateurs (comme Nikola Tesla) directement dans le conteneur via des requêtes LDIF :
 
 ```bash
-ldapsearch \
-  -H ldap://ldap.forumsys.com \
-  -D "cn=read-only-admin,dc=example,dc=com" \
-  -w password \
-  -b "dc=example,dc=com" \
-  "(objectClass=*)"
-
+docker exec -i bookstack_ldap ldapadd -x -D "cn=admin,dc=iut,dc=org" -w adminpassword 
+<< EOF
+dn: uid=tesla,dc=iut,dc=org
+objectClass: inetOrgPerson
+objectClass: organizationalPerson
+objectClass: person
+objectClass: top
+uid: tesla
+sn: Tesla
+cn: Nikola Tesla
+mail: tesla@iut.org
+userPassword: password
+EOF
 ```
 
-Nous avons identifié que chaque utilisateur de test expose trois attributs utiles configurables dans BookStack : `uid` (identifiant), `mail` (e-mail) et `cn` (nom complet affiché).
+**Méthode 2 : Via l'interface graphique (phpLDAPadmin)**
+Afin de simuler un environnement de production réaliste, nous avons déployé phpLDAPadmin. En nous connectant avec le compte `cn=admin,dc=iut,dc=org`, nous pouvons désormais lister, modifier et créer de nouveaux utilisateurs (modèle *Generic: User Account*) en quelques clics sans toucher au terminal.
 
-### Difficultés et Solutions
+**Remarque :**
+
+On peut d'ailleurs constater l'apparition des utilisateurs qu'on crée en ligne de commandes dans l'interface.
+
+On a par la même occasion pu constater que notre LDAP Local fonctionnait pour l'authentification à Bookstack car il est maintenant possible de se connecter notamment avec le compte `tesla` et celui si obtiendra l'email ̀`tesla@iut.org` qu'on ne pourra modifier.
+
+## 4. Observations et Difficultés rencontrées
 
 **1. Le filtre de recherche LDAP de l'énoncé est erroné**
-Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Avec `${input}`, la recherche échouait silencieusement et l'interface affichait "Ces informations ne correspondent à aucun compte". Remplacer cette variable par `${user}` a résolu le problème.
-
-> **Note Docker Compose :** Dans le fichier `.yml`, le symbole `$` doit être doublé pour ne pas être interprété comme une variable système par Docker. Nous avons donc renseigné `LDAP_USER_FILTER=(uid=$${user})`.
+Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Avec `${input}`, la recherche échouait silencieusement. Remplacer cette variable par `${user}` a résolu le problème. De plus, dans le fichier `.yml`, le symbole `$` doit être doublé (`$${user}`) pour ne pas être interprété par Docker.
 
 **2. Erreur 500 : Problème de cache et variables d'environnement**
-Lors du déploiement, nous avons été confrontés à une "Erreur 500" persistante. Les logs des conteneurs ont révélé une erreur `Access denied for user 'database_username'`. L'image Docker de LinuxServer utilise un script d'initialisation pour générer un fichier `.env`. Si ce script échoue ou conserve d'anciens caches, il injecte les variables par défaut de BookStack (dont `database_username`), ignorant ainsi nos variables `DB_USER` et `DB_PASS`.
+Lors de nos premiers déploiements, les logs ont révélé une erreur `Access denied for user 'database_username'`. L'image LinuxServer utilise un script pour générer un fichier `.env`. Si ce script conserve d'anciens caches, il injecte les variables par défaut, ignorant nos variables `DB_USER` et `DB_PASS`.
+*Solution apportée :* Nous avons injecté directement les variables natives de Laravel (`DB_USERNAME` et `DB_PASSWORD`), ce qui court-circuite le fichier `.env`.
 
-> **Solution apportée :** Nous avons modifié le `docker-compose.yml` pour injecter directement les variables d'environnement natives de Laravel (`DB_USERNAME` et `DB_PASSWORD`), ce qui court-circuite et remplace le comportement par défaut du fichier `.env`. Nous avons également renommé nos volumes de persistance (`_v2`) pour garantir un déploiement entièrement propre.
-
-**3. Absence d'adresse e-mail pour certains utilisateurs**
-BookStack requiert obligatoirement une adresse e-mail pour créer le compte local de l'utilisateur lors de sa première connexion. Sur ce serveur LDAP de test, des utilisateurs comme `tesla` ou `newton` n'ont pas l'attribut `mail` renseigné, ce qui bloque la connexion. Nous avons donc effectué nos tests finaux avec l'utilisateur `einstein`, dont le profil LDAP est complet.
-
-### Résultat final
-
-En se connectant à l'interface web de BookStack avec l'identifiant `einstein` et le mot de passe `password`, l'authentification réussit. BookStack crée alors automatiquement le profil en récupérant les informations de l'annuaire : le nom affiché devient "Albert Einstein" et l'e-mail renseigné est `einstein@ldap.forumsys.com`.
+**3. Les "Fantômes" Docker (Ports bloqués et Volumes persistants)**
+En migrant vers l'infrastructure locale, nous avons rencontré des erreurs `bind: address already in use` et des connexions "fantômes". Des processus système (le navigateur et le `docker-proxy`) maintenaient les ports ouverts en tâche de fond, et Docker réutilisait silencieusement nos anciennes bases de données incomplètes.
+*Solution apportée :* Nous avons forcé la destruction des processus orphelins (commande `kill`), redémarré le service Docker, et renommé les volumes en vanilla pour s'assurer un environnement totalement vierge.
