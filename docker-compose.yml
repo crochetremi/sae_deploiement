@@ -69,8 +69,26 @@ services:
       - mariadb
       - openldap
 
+  nextcloud:
+    image: nextcloud:latest
+    container_name: nextcloud
+    restart: unless-stopped
+    ports:
+      - "8082:80"
+    environment:
+      - MYSQL_HOST=mariadb
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=mot_de_passe
+    volumes:
+      - nextcloud_data:/var/www/html
+    depends_on:
+      - mariadb
+
+
 volumes:
   bookstack_db_data_vanilla:
   bookstack_app_data_vanilla:
   openldap_conf_data_vanilla:
   openldap_db_data_vanilla:
+  nextcloud_data:
