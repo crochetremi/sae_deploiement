@@ -25,6 +25,18 @@ services:
       - openldap_db_data_vanilla:/var/lib/ldap
     restart: unless-stopped
   
+  phpldapadmin:
+    image: osixia/phpldapadmin:0.9.0
+    container_name: bookstack_ldap_admin
+    environment:
+      - PHPLDAPADMIN_LDAP_HOSTS=openldap
+      - PHPLDAPADMIN_HTTPS=false
+    ports:
+      - '8081:80'
+    restart: unless-stopped
+    depends_on:
+      - openldap
+  
   bookstack:
     image: lscr.io/linuxserver/bookstack
     container_name: bookstack_app
