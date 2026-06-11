@@ -1,4 +1,4 @@
-# Déploiement de BookStack avec authentification LDAP
+# Déploiement de BookStack et Nextcloud avec authentification SSO LDAP
 **SAÉ Déploiement d’une application collaborative - Rémi Crochet et Ronan Fisson**
 
 ---
@@ -7,75 +7,83 @@
 
 LDAP (Lightweight Directory Access Protocol) est un protocole qui permet d'accéder à un annuaire centralisé d'utilisateurs. Concrètement, c'est ce qui permet à une entreprise d'avoir un seul compte par personne, utilisable sur toutes les applications internes — c'est le principe du SSO (Single Sign-On).
 
-L'annuaire est organisé comme un arbre (DIT - Directory Information Tree). Chaque utilisateur est une entrée avec des attributs (nom, e-mail, identifiant...) et est identifié par un DN (Distinguished Name) unique, par exemple `uid=einstein,dc=iut,dc=org`. Pour interroger l'annuaire, on effectue d'abord un **bind** (authentification de service), puis un **search** (recherche d'entrées), et enfin un nouveau **bind** pour vérifier le mot de passe de l'utilisateur.
+L'annuaire est organisé comme un arbre (DIT - Directory Information Tree). Chaque utilisateur est une entrée avec des attributs (nom, e-mail, identifiant...) et est identifié par un DN (Distinguished Name) unique, par exemple `uid=einstein,ou=users,dc=mongroupe,dc=local`. Pour interroger l'annuaire, on effectue d'abord un **bind** (authentification de service), puis un **search** (recherche d'entrées), et enfin un nouveau **bind** pour vérifier le mot de passe de l'utilisateur.
 
+---
 
-## 2. Architecture de notre Déploiement (Infrastructure Locale)
+## 2. Architecture du Déploiement (Infrastructure Locale)
 
-Dans un premier temps, nous avions relié BookStack au serveur de test public `ldap.forumsys.com`. Pour garantir la sécurité, la robustesse et l'autonomie totale de notre application, nous avons finalement fait évoluer notre infrastructure en déployant **notre propre annuaire LDAP local**.
+Dans un premier temps, nous avions relié BookStack au serveur de test public `ldap.forumsys.com`. Pour garantir la sécurité, la robustesse et l'autonomie totale de notre application, nous avons fait évoluer notre infrastructure en déployant **notre propre annuaire LDAP local** et en ajoutant un service de Cloud.
 
-Notre fichier `docker-compose.yml` orchestre désormais 4 conteneurs :
+Nous avons structuré notre projet de manière professionnelle avec des dossiers dédiés pour nos scripts d'automatisation :
 
-1. **MariaDB** : La base de données relationnelle pour BookStack.
-2. **BookStack** : L'application web collaborative (accessible sur le port `8080`).
-3. **OpenLDAP** (`osixia/openldap`) : Notre serveur d'annuaire local, configuré sur le domaine `dc=iut,dc=org`.
-4. **phpLDAPadmin** (`osixia/phpldapadmin`) : Une interface web d'administration pour gérer notre annuaire facilement (accessible sur le port `8081`).
-
-### Lancer l'infrastructure
-
-Toute l'infrastructure se lance avec une seule commande :
-
-```bash
-docker compose up -d
+```text
+.
+├── docker-compose.yml
+├── script/
+│   ├── start.sh
+│   └── structure.ldif
+└── sql/
+    └── init_nextcloud.sql
 
 ```
 
-* **BookStack :** `http://localhost:8080`
-* **phpLDAPadmin :** `http://localhost:8081`
+Notre fichier `docker-compose.yml` orchestre désormais 5 conteneurs interconnectés :
 
+1. **MariaDB** : La base de données relationnelle (qui héberge à la fois les bases de BookStack et Nextcloud).
+2. **OpenLDAP** (`osixia/openldap`) : Notre serveur d'annuaire local, configuré sur le domaine `dc=mongroupe,dc=local`.
+3. **phpLDAPadmin** (`osixia/phpldapadmin`) : L'interface web d'administration de l'annuaire (Port `8081`).
+4. **BookStack** : L'application web collaborative (Port `8080`).
+5. **Nextcloud** : Le service de stockage et de partage de fichiers (Port `8082`).
 
+---
 
-## 3. Administration de l'annuaire et des Utilisateurs
+## 3. Déploiement et Automatisation de l'Infrastructure
 
-Contrairement au serveur public, notre image locale démarre avec un annuaire vierge. Nous avons pu le peupler de deux manières :
+Pour garantir un déploiement propre et reproductible sans intervention manuelle à l'intérieur des conteneurs, nous avons automatisé la création des bases de données et la population de l'annuaire LDAP.
 
-**Méthode 1 : En ligne de commande (CLI)**
-Nous avons injecté des utilisateurs (comme Nikola Tesla) directement dans le conteneur via des requêtes LDIF :
+### Automatisation de la Base de Données
+
+Le conteneur MariaDB crée nativement la base `bookstackapp` grâce aux variables d'environnement. Pour Nextcloud, nous avons monté le fichier `sql/init_nextcloud.sql` dans le dossier spécial `/docker-entrypoint-initdb.d/` de MariaDB. Lors du premier lancement, MariaDB lit ce script et crée automatiquement la base et l'utilisateur `nextcloud`.
+
+### Automatisation du LDAP et Lancement
+
+Plutôt que de taper une simple commande `docker compose up`, nous avons créé le script d'initialisation `script/start.sh`. Ce script se charge de d'exécuter la commande `ldapadd` depuis la machine hôte pour injecter automatiquement notre fichier `structure.ldif`. Ce fichier crée l'arborescence (`ou=users`, `ou=groups`) et génère 3 scientifiques de test (Einstein, Curie, Turing).
+
+### Lancer l'infrastructure (Premier démarrage)
 
 ```bash
-docker exec -i bookstack_ldap ldapadd -x -D "cn=admin,dc=mongroupe,dc=local" -w adminpassword 
-<< EOF
-dn: uid=tesla,dc=iut,dc=org
-objectClass: inetOrgPerson
-objectClass: organizationalPerson
-objectClass: person
-objectClass: top
-uid: tesla
-sn: Tesla
-cn: Nikola Tesla
-mail: tesla@iut.org
-userPassword: password
-EOF
+cd script
+chmod +x start.sh
+./start.sh
+
 ```
 
-**Méthode 2 : Via l'interface graphique (phpLDAPadmin)**
-Afin de simuler un environnement de production réaliste, nous avons déployé phpLDAPadmin. En nous connectant avec le compte `cn=admin,dc=mongroupe,dc=local`, nous pouvons désormais lister, modifier et créer de nouveaux utilisateurs (modèle *Generic: User Account*) en quelques clics sans toucher au terminal.
+*(Pour l'administration quotidienne, nous utilisons l'interface graphique **phpLDAPadmin** sur le port `8081` pour consulter l'annuaire utilisateurs en quelques clics, pratique pour visualiser la structure de données).*
 
-**Remarque :**
+---
 
-On peut d'ailleurs constater l'apparition des utilisateurs qu'on crée en ligne de commandes dans l'interface.
+## 4. Intégration LDAP dans Nextcloud
 
-On a par la même occasion pu constater que notre LDAP Local fonctionnait pour l'authentification à Bookstack car il est maintenant possible de se connecter notamment avec le compte `tesla` et celui si obtiendra l'email ̀`tesla@iut.org` qu'on ne pourra modifier.
+L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'administration, en paramétrant finement les filtres de recherche pour correspondre à notre structure `ou=users,dc=mongroupe,dc=local`.
 
-## 4. Observations et Difficultés rencontrées
+* **Filtre des utilisateurs :** `(&(objectclass=inetOrgPerson))` (Permet à Nextcloud de compter le nombre d'utilisateurs humains valides dans l'annuaire).
+* **Filtre de connexion :** `(&(&(objectclass=inetOrgPerson))(uid=%uid))` (Permet de faire correspondre la saisie de l'utilisateur avec l'attribut `uid` du LDAP).
+* **Attribut Nom d'utilisateur interne :** Forcé sur `uid` dans les paramètres avancés pour éviter que Nextcloud ne génère des dossiers avec des identifiants (UUID) illisibles.
 
-**1. Le filtre de recherche LDAP de l'énoncé est erroné**
-Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Avec `${input}`, la recherche échouait silencieusement. Remplacer cette variable par `${user}` a résolu le problème. De plus, dans le fichier `.yml`, le symbole `$` doit être doublé (`$${user}`) pour ne pas être interprété par Docker.
+---
 
-**2. Erreur 500 : Problème de cache et variables d'environnement**
-Lors de nos premiers déploiements, les logs ont révélé une erreur `Access denied for user 'database_username'`. L'image LinuxServer utilise un script pour générer un fichier `.env`. Si ce script conserve d'anciens caches, il injecte les variables par défaut, ignorant nos variables `DB_USER` et `DB_PASS`.
-*Solution apportée :* Nous avons injecté directement les variables natives de Laravel (`DB_USERNAME` et `DB_PASSWORD`), ce qui court-circuite le fichier `.env`.
+## 5. Observations et Difficultés rencontrées
 
-**3. Les "Fantômes" Docker (Ports bloqués et Volumes persistants)**
-En migrant vers l'infrastructure locale, nous avons rencontré des erreurs `bind: address already in use` et des connexions "fantômes". Des processus système (le navigateur et le `docker-proxy`) maintenaient les ports ouverts en tâche de fond, et Docker réutilisait silencieusement nos anciennes bases de données incomplètes.
-*Solution apportée :* Nous avons forcé la destruction des processus orphelins (commande `kill`), redémarré le service Docker, et renommé les volumes en vanilla pour s'assurer un environnement totalement vierge.
+**1. Le filtre de recherche LDAP BookStack erroné**
+Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Remplacer cette variable par `${user}` a résolu le problème (en n'oubliant pas de doubler le symbole `$${user}` dans le `.yml` pour Docker).
+
+**2. Erreur 500 : Problème de cache de l'image LinuxServer**
+L'image BookStack utilise un script pour générer un fichier `.env`. S'il conserve d'anciens caches, il injecte des variables par défaut corrompues (`Access denied for user 'database_username'`). Nous avons contourné le problème en injectant directement les variables natives de Laravel (`DB_USERNAME` et `DB_PASSWORD`), court-circuitant ainsi le fichier `.env`.
+
+**3. Les "Fantômes" Docker (Ports bloqués)**
+En migrant vers l'infrastructure locale, nous avons rencontré des erreurs `bind: address already in use`. Des processus système orphelins (le `docker-proxy`) maintenaient les ports ouverts en tâche de fond. Nous avons dû forcer la destruction des processus via la commande `kill` et renommer nos volumes (`_vanilla`) pour garantir un environnement vierge.
+
+**4. Le ciblage de la base utilisateur dans Nextcloud**
+Lors de la configuration LDAP dans l'interface de Nextcloud, bien que la connexion au serveur soit établie, l'application ne trouvait initialement aucun utilisateur.
+Solution apportée : Au lieu de laisser Nextcloud chercher à la racine globale de l'annuaire, nous avons explicitement renseigné le chemin de notre unité organisationnelle dans le paramètre du DN de base utilisateur : ou=users,dc=mongroupe,dc=local. Ce ciblage précis a immédiatement permis au système de localiser et de valider nos comptes de test.
