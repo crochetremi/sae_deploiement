@@ -34,9 +34,9 @@ services:
     environment:
       - PHPLDAPADMIN_LDAP_HOSTS=openldap
       - PHPLDAPADMIN_HTTPS=false
-    ports:
-      - '8081:80'
     restart: unless-stopped
+    ports:
+      - 8081:80
     depends_on:
       - openldap
   
@@ -97,12 +97,14 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "81:81"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - bookstack
       - nextcloud
+      - phpldapadmin
     restart: unless-stopped    
 
 
