@@ -92,15 +92,19 @@ services:
       - MYSQL_DATABASE=nextcloud
       - MYSQL_USER=nextcloud
       - MYSQL_PASSWORD_FILE=/run/secrets/db_nextcloud_pwd
+      - NEXTCLOUD_ADMIN_USER=admin
+      - NEXTCLOUD_ADMIN_PASSWORD_FILE=/run/secrets/nextcloud_admin_pwd
       - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.mongroupe.local
       - OVERWRITEPROTOCOL=https
       - OVERWRITEHOST=nextcloud.mongroupe.local
     secrets:
       - db_nextcloud_pwd
+      - nextcloud_admin_pwd 
     volumes:
       - nextcloud_data:/var/www/html
     depends_on:
       - mariadb
+
 
   nginx:
     image: nginx:latest
@@ -125,6 +129,8 @@ secrets:
     file: ./secrets/db_bookstack_pwd.txt
   db_nextcloud_pwd:
     file: ./secrets/db_nextcloud_pwd.txt
+  nextcloud_admin_pwd:
+    file: ./secrets/nextcloud_admin_pwd.txt
   ldap_admin_pwd:
     file: ./secrets/ldap_admin_pwd.txt
   app_key:

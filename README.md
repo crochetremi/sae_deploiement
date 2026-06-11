@@ -20,6 +20,7 @@ Nous avons structuré notre projet de manière professionnelle avec des dossiers
 
 ```text
 .
+├── backups/               # Dossier généré automatiquement pour les sauvegardes
 ├── docker-compose.yml
 ├── nginx/
 │   ├── certs/
@@ -27,8 +28,11 @@ Nous avons structuré notre projet de manière professionnelle avec des dossiers
 │   │   └── selfsigned.key
 │   └── nginx.conf
 ├── script/
+│   ├── backup.sh
+│   ├── restore.sh
 │   ├── start.sh
 │   └── structure.ldif
+├── secrets/               # Mots de passe et clés
 └── sql/
     └── init_nextcloud.sql
 
@@ -59,46 +63,48 @@ Afin de simuler un environnement de production réaliste, nous avons déployé u
 
 * `https://bookstack.mongroupe.local`
 * `https://nextcloud.mongroupe.local`
-* `https://phpldapadmin.mongroupe.local` 
+* `https://phpldapadmin.mongroupe.local`
 
 ---
 
 ## 4. Déploiement et Automatisation de l'Infrastructure
 
-Pour garantir un déploiement propre et reproductible sans intervention manuelle à l'intérieur des conteneurs, nous avons automatisé la création des bases de données et la population de l'annuaire LDAP.
+Pour garantir un déploiement propre et reproductible sans intervention manuelle à l'intérieur des conteneurs, nous avons poussé l'automatisation à son maximum (*Infrastructure as Code*).
+
+### Gestion Sécurisée des Mots de Passe (Docker Secrets)
+
+Pour éviter de stocker des informations sensibles en clair dans le fichier `docker-compose.yml`, nous avons implémenté les **Docker Secrets**. Les mots de passe sont stockés dans des fichiers texte isolés et injectés en toute sécurité directement dans la RAM des conteneurs (ex: `/run/secrets/db_root_pwd`).
 
 ### Automatisation de la Base de Données
 
-Le conteneur MariaDB crée nativement la base `bookstackapp` grâce aux variables d'environnement. Pour Nextcloud, nous avons monté le fichier `sql/init_nextcloud.sql` dans le dossier spécial `/docker-entrypoint-initdb.d/` de MariaDB. Lors du premier lancement, MariaDB lit ce script et crée automatiquement la base et l'utilisateur `nextcloud`.
+Le conteneur MariaDB crée nativement la base `bookstackapp` via ses variables d'environnement. Pour Nextcloud, nous avons monté le fichier `sql/init_nextcloud.sql` dans le dossier `/docker-entrypoint-initdb.d/`. Au premier lancement, MariaDB lit ce script et crée automatiquement la base et l'utilisateur `nextcloud`.
+
+### Installation "Zero-Touch" de Nextcloud
+
+Afin d'éviter d'avoir à remplir la page d'installation manuelle de Nextcloud, nous avons injecté les variables `NEXTCLOUD_ADMIN_USER` et `NEXTCLOUD_ADMIN_PASSWORD_FILE`. Cela permet à l'application de s'installer silencieusement en arrière-plan et de se lier à la base de données automatiquement au premier démarrage.
 
 ### Automatisation du LDAP et Lancement
 
-Plutôt que de taper une simple commande `docker compose up`, nous avons créé le script d'initialisation `script/start.sh`. Ce script se charge d'exécuter la commande `ldapadd` depuis la machine hôte pour injecter automatiquement notre fichier `structure.ldif`. Ce fichier crée l'arborescence (`ou=users`, `ou=groups`) et génère 3 scientifiques de test (Einstein, Curie, Turing).
-
-### Lancer l'infrastructure (Premier démarrage)
-
-```bash
-cd script
-chmod +x start.sh
-./start.sh
-
-```
+Plutôt que de taper une simple commande `docker compose up`, nous avons créé le script `script/start.sh`. Il exécute la commande `ldapadd` depuis la machine hôte pour injecter notre fichier `structure.ldif`. Ce fichier crée l'arborescence (`ou=users`, `ou=groups`) et génère 3 scientifiques de test (Einstein, Curie, Turing).
 
 ---
 
 ## 5. Intégration LDAP dans Nextcloud
 
-L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'administration, en paramétrant finement les filtres de recherche pour correspondre à notre structure `ou=users,dc=mongroupe,dc=local`.
-Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser quelle est exactement la configuration que nous avons utilisée pour lier LDAP.
+L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'administration, en paramétrant finement les filtres de recherche. Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser la configuration exacte utilisée.
 
 * **Filtre des utilisateurs :** `(&(objectclass=inetOrgPerson))` (Permet à Nextcloud de compter le nombre d'utilisateurs humains valides dans l'annuaire).
-* **Filtre de connexion :** `(&(&(objectclass=inetOrgPerson))(uid=%uid))` (Permet de faire correspondre la saisie de l'utilisateur avec l'attribut `uid` du LDAP).
+* **Filtre de connexion :** `(&(&(objectclass=inetOrgPerson))(uid=%uid))` (Fait correspondre la saisie de l'utilisateur avec l'attribut `uid` du LDAP).
 * **Attribut Nom d'utilisateur interne :** Forcé sur `uid` dans les paramètres avancés pour éviter que Nextcloud ne génère des dossiers avec des identifiants (UUID) illisibles.
 
-## 6. Sauvegarde et restauration
+---
+
+## 6. Sauvegarde et Restauration (Disaster Recovery Plan)
+
+Afin de garantir la pérennité des données, nous avons conçu deux scripts bash (`backup.sh` et `restore.sh`). Ces scripts utilisent un conteneur temporaire `alpine` pour archiver (au format `.tar.gz`) les volumes critiques montés en lecture seule (`ro`), et les stocker de manière horodatée dans un dossier local `backups/`.
 
 | Nom du volume | Service associé | Type de données stockées | Criticité |
-| :--- | :--- | :--- | :--- |
+| --- | --- | --- | --- |
 | **`sae_deploiement_bookstack_db_data_vanilla`** | MariaDB | Bases de données relationnelles (`bookstackapp` et `nextcloud`). Contient le texte des pages, la structure des livres, et les métadonnées de Nextcloud. | **Critique (Perte inacceptable).** C'est le cœur de l'information. Sans lui, les applications sont vides. |
 | **`sae_deploiement_nextcloud_data`** | Nextcloud | Fichiers physiques uploadés par les utilisateurs (documents, images), configuration système (`config.php`) et applications Nextcloud installées. | **Critique (Perte inacceptable).** Un service de Cloud perd tout son sens si les fichiers des utilisateurs disparaissent. |
 | **`sae_deploiement_bookstack_app_data_vanilla`** | BookStack | Fichiers uploadés dans BookStack (images insérées dans les pages, pièces jointes) et configuration interne (`.env` généré par l'image LinuxServer). | **Critique (Perte inacceptable).** Si perdu, les pages BookStack auront des images brisées. |
@@ -110,18 +116,25 @@ Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser q
 ## 7. Observations et Difficultés rencontrées
 
 **1. Le filtre de recherche LDAP BookStack erroné**
-Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Remplacer cette variable par `${user}` a résolu le problème (en n'oubliant pas de doubler le symbole `$${user}` dans le `.yml` pour Docker).
+Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Remplacer cette variable a résolu le problème (en n'oubliant pas de doubler le symbole `$${user}` dans le `.yml` pour l'échappement Docker).
 
 **2. Erreur 500 : Problème de cache de l'image LinuxServer**
 L'image BookStack utilise un script pour générer un fichier `.env`. S'il conserve d'anciens caches, il injecte des variables par défaut corrompues (`Access denied for user 'database_username'`). Nous avons contourné le problème en injectant directement les variables natives de Laravel (`DB_USERNAME` et `DB_PASSWORD`), court-circuitant ainsi le fichier `.env`.
 
 **3. Les "Fantômes" Docker (Ports bloqués)**
-En migrant vers l'infrastructure locale, nous avons rencontré des erreurs `bind: address already in use`. Des processus système orphelins (le `docker-proxy`) maintenaient les ports ouverts en tâche de fond. Nous avons dû forcer la destruction des processus via la commande `kill` et renommer nos volumes (`_vanilla`) pour garantir un environnement vierge.
+En migrant vers l'infrastructure locale, nous avons rencontré des erreurs `bind: address already in use`. Des processus système orphelins maintenaient les ports ouverts en tâche de fond. Nous avons dû forcer la destruction des processus via la commande `kill`.
 
 **4. Le ciblage de la base utilisateur dans Nextcloud**
-Lors de la configuration LDAP dans l'interface de Nextcloud, bien que la connexion au serveur soit établie, l'application ne trouvait initialement aucun utilisateur.
-*Solution apportée :* Au lieu de laisser Nextcloud chercher à la racine globale de l'annuaire, nous avons explicitement renseigné le chemin de notre unité organisationnelle dans le paramètre du DN de base utilisateur : `ou=users,dc=mongroupe,dc=local`. Ce ciblage précis a immédiatement permis au système de localiser et de valider nos comptes de test.
+Lors de la configuration LDAP dans l'interface de Nextcloud, l'application ne trouvait initialement aucun utilisateur (0 trouvé).
+*Solution apportée :* Au lieu de laisser Nextcloud chercher à la racine globale de l'annuaire, nous avons explicitement renseigné le chemin de notre unité organisationnelle dans le paramètre du DN de base utilisateur : `ou=users,dc=mongroupe,dc=local`.
 
 **5. Résolution DNS locale et sécurité des navigateurs (DoH)**
-Lors de la configuration de Nginx, les domaines virtuels `.local` définis dans le fichier `/etc/hosts` de la machine n'étaient pas toujours reconnus par les navigateurs web, renvoyant une erreur "Adresse introuvable" malgré un terminal réussissant le "ping".
-*Solution apportée :* Nous avons identifié que la fonctionnalité de sécurité "DNS over HTTPS" (DoH) de Firefox contournait le fichier `hosts` local pour interroger directement des serveurs DNS publics. Désactiver cette option dans le navigateur a permis de rétablir le routage Nginx local.
+Lors de la configuration de Nginx, les domaines virtuels `.local` définis dans le fichier `/etc/hosts` de la machine n'étaient pas toujours reconnus par les navigateurs web, renvoyant une erreur "Adresse introuvable".
+*Solution apportée :* La fonctionnalité "DNS over HTTPS" (DoH) de Firefox contournait le fichier `hosts` local pour interroger directement des serveurs DNS publics. Désactiver cette option dans le navigateur a rétabli le routage.
+
+**6. Le piège des Docker Secrets selon les images**
+L'implémentation des Docker Secrets nécessite une syntaxe différente selon le créateur de l'image. Les images officielles (MariaDB, Nextcloud) attendent le suffixe `_FILE` (ex: `MYSQL_PASSWORD_FILE`), tandis que les images maintenues par LinuxServer (BookStack) utilisent un format spécifique avec un double underscore en préfixe (`FILE__DB_PASS`).
+
+**7. La condition de course (Race Condition) lors de l'auto-installation Nextcloud**
+Bien que configuré pour s'installer silencieusement ("Zero-Touch"), Nextcloud démarre parfois plus vite que le temps nécessaire à MariaDB pour s'initialiser. Dans ce cas, Nextcloud échoue en silence et affiche la page d'installation manuelle par défaut.
+*Solution apportée :* Effectuer un nettoyage complet du volume Nextcloud puis le redémarrer permet de relancer la tentative d'installation automatique une fois la base de données prête.
