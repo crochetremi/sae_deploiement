@@ -95,9 +95,19 @@ Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser q
 * **Filtre de connexion :** `(&(&(objectclass=inetOrgPerson))(uid=%uid))` (Permet de faire correspondre la saisie de l'utilisateur avec l'attribut `uid` du LDAP).
 * **Attribut Nom d'utilisateur interne :** Forcé sur `uid` dans les paramètres avancés pour éviter que Nextcloud ne génère des dossiers avec des identifiants (UUID) illisibles.
 
+## 6. Sauvegarde et restauration
+
+| Nom du volume | Service associé | Type de données stockées | Criticité |
+| :--- | :--- | :--- | :--- |
+| **`sae_deploiement_bookstack_db_data_vanilla`** | MariaDB | Bases de données relationnelles (`bookstackapp` et `nextcloud`). Contient le texte des pages, la structure des livres, et les métadonnées de Nextcloud. | **Critique (Perte inacceptable).** C'est le cœur de l'information. Sans lui, les applications sont vides. |
+| **`sae_deploiement_nextcloud_data`** | Nextcloud | Fichiers physiques uploadés par les utilisateurs (documents, images), configuration système (`config.php`) et applications Nextcloud installées. | **Critique (Perte inacceptable).** Un service de Cloud perd tout son sens si les fichiers des utilisateurs disparaissent. |
+| **`sae_deploiement_bookstack_app_data_vanilla`** | BookStack | Fichiers uploadés dans BookStack (images insérées dans les pages, pièces jointes) et configuration interne (`.env` généré par l'image LinuxServer). | **Critique (Perte inacceptable).** Si perdu, les pages BookStack auront des images brisées. |
+| **`sae_deploiement_openldap_db_data_vanilla`** | OpenLDAP | Les données de l'annuaire (l'arbre DIT, les utilisateurs complets, les groupes et les mots de passe hachés). | **Acceptable (Reconstructible).** *Normalement critique*, mais grâce au script `start.sh` et `structure.ldif`, ce volume se recrée automatiquement. |
+| **`sae_deploiement_openldap_conf_data_vanilla`** | OpenLDAP | Fichiers de configuration interne du serveur LDAP. | **Acceptable (Reconstructible).** Ces fichiers sont générés automatiquement par l'image Docker au démarrage. |
+
 ---
 
-## 6. Observations et Difficultés rencontrées
+## 7. Observations et Difficultés rencontrées
 
 **1. Le filtre de recherche LDAP BookStack erroné**
 Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Remplacer cette variable par `${user}` a résolu le problème (en n'oubliant pas de doubler le symbole `$${user}` dans le `.yml` pour Docker).
