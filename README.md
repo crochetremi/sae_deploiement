@@ -43,7 +43,7 @@ Contrairement au serveur public, notre image locale démarre avec un annuaire vi
 Nous avons injecté des utilisateurs (comme Nikola Tesla) directement dans le conteneur via des requêtes LDIF :
 
 ```bash
-docker exec -i bookstack_ldap ldapadd -x -D "cn=admin,dc=iut,dc=org" -w adminpassword 
+docker exec -i bookstack_ldap ldapadd -x -D "cn=admin,dc=mongroupe,dc=local" -w adminpassword 
 << EOF
 dn: uid=tesla,dc=iut,dc=org
 objectClass: inetOrgPerson
@@ -59,7 +59,7 @@ EOF
 ```
 
 **Méthode 2 : Via l'interface graphique (phpLDAPadmin)**
-Afin de simuler un environnement de production réaliste, nous avons déployé phpLDAPadmin. En nous connectant avec le compte `cn=admin,dc=iut,dc=org`, nous pouvons désormais lister, modifier et créer de nouveaux utilisateurs (modèle *Generic: User Account*) en quelques clics sans toucher au terminal.
+Afin de simuler un environnement de production réaliste, nous avons déployé phpLDAPadmin. En nous connectant avec le compte `cn=admin,dc=mongroupe,dc=local`, nous pouvons désormais lister, modifier et créer de nouveaux utilisateurs (modèle *Generic: User Account*) en quelques clics sans toucher au terminal.
 
 **Remarque :**
 

@@ -9,6 +9,7 @@ services:
       - MYSQL_PASSWORD=secret_password
     volumes:
       - bookstack_db_data_vanilla:/var/lib/mysql
+      - ./sql/init_nextcloud.sql:/docker-entrypoint-initdb.d/init_nextcloud.sql
     restart: unless-stopped
 
   openldap:
@@ -17,8 +18,10 @@ services:
     ports:
       - '389:389'
     environment:
-      - LDAP_ORGANISATION=IUT Org
-      - LDAP_DOMAIN=iut.org
+      - LDAP_BASE_DN=dc=mongroupe,dc=local
+      - LDAP_DN=cn=admin,dc=mongroupe,dc=local
+      - LDAP_ORGANISATION=MonGroupe
+      - LDAP_DOMAIN=mongroupe.local
       - LDAP_ADMIN_PASSWORD=adminpassword
     volumes:
       - openldap_conf_data_vanilla:/etc/ldap/slapd.d
@@ -52,8 +55,8 @@ services:
       # --- Configuration LDAP Locale ---
       - AUTH_METHOD=ldap
       - LDAP_SERVER=ldap://openldap:389
-      - LDAP_BASE_DN=dc=iut,dc=org
-      - LDAP_DN=cn=admin,dc=iut,dc=org
+      - LDAP_BASE_DN=dc=mongroupe,dc=local
+      - LDAP_DN=cn=admin,dc=mongroupe,dc=local
       - LDAP_PASS=adminpassword
       - LDAP_USER_FILTER=(uid=$${user})
       - LDAP_ID_ATTRIBUTE=uid
@@ -84,7 +87,6 @@ services:
       - nextcloud_data:/var/www/html
     depends_on:
       - mariadb
-
 
 volumes:
   bookstack_db_data_vanilla:
