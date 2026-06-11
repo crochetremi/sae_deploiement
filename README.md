@@ -66,6 +66,7 @@ chmod +x start.sh
 ## 4. Intégration LDAP dans Nextcloud
 
 L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'administration, en paramétrant finement les filtres de recherche pour correspondre à notre structure `ou=users,dc=mongroupe,dc=local`.
+Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser quelle est exactement la configuration que nous avons utilisé pour lier LDAP.
 
 * **Filtre des utilisateurs :** `(&(objectclass=inetOrgPerson))` (Permet à Nextcloud de compter le nombre d'utilisateurs humains valides dans l'annuaire).
 * **Filtre de connexion :** `(&(&(objectclass=inetOrgPerson))(uid=%uid))` (Permet de faire correspondre la saisie de l'utilisateur avec l'attribut `uid` du LDAP).
