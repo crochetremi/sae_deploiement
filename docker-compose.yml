@@ -3,10 +3,13 @@ services:
     image: mariadb:10.6
     container_name: bookstack_db
     environment:
-      - MYSQL_ROOT_PASSWORD=secret_root_password
+      - MYSQL_ROOT_PASSWORD_FILE=/run/secrets/db_root_pwd
       - MYSQL_DATABASE=bookstackapp
       - MYSQL_USER=bookstack
-      - MYSQL_PASSWORD=secret_password
+      - MYSQL_PASSWORD_FILE=/run/secrets/db_bookstack_pwd
+    secrets:
+      - db_root_pwd
+      - db_bookstack_pwd
     volumes:
       - bookstack_db_data_vanilla:/var/lib/mysql
       - ./sql/init_nextcloud.sql:/docker-entrypoint-initdb.d/init_nextcloud.sql
@@ -18,11 +21,13 @@ services:
     ports:
       - '389:389'
     environment:
-      - LDAP_ADMIN_PASSWORD=adminpassword
+      - LDAP_ADMIN_PASSWORD_FILE=/run/secrets/ldap_admin_pwd
       - LDAP_BASE_DN=dc=mongroupe,dc=local
       - LDAP_DN=cn=admin,dc=mongroupe,dc=local
       - LDAP_ORGANISATION=MonGroupe
       - LDAP_DOMAIN=mongroupe.local
+    secrets:
+      - ldap_admin_pwd
     volumes:
       - openldap_conf_data_vanilla:/etc/ldap/slapd.d
       - openldap_db_data_vanilla:/var/lib/ldap
@@ -45,24 +50,28 @@ services:
     container_name: bookstack_app
     environment:
       - APP_URL=https://bookstack.mongroupe.local      
-      - APP_KEY=base64:YGbrwK+CsAKb1yyyD6LTVQy/QbvY7OTjBTaeZgObfvU=
+      - FILE__APP_KEY=/run/secrets/app_key
       - DB_HOST=mariadb
       - DB_USER=bookstack
-      - DB_PASS=secret_password
+      - FILE__DB_PASS=/run/secrets/db_bookstack_pwd
       - DB_DATABASE=bookstackapp
       - DB_USERNAME=bookstack
-      - DB_PASSWORD=secret_password
+      - FILE__DB_PASSWORD=/run/secrets/db_bookstack_pwd
       # --- Configuration LDAP Locale ---
       - AUTH_METHOD=ldap
       - LDAP_SERVER=ldap://openldap:389
       - LDAP_BASE_DN=dc=mongroupe,dc=local
       - LDAP_DN=cn=admin,dc=mongroupe,dc=local
-      - LDAP_PASS=adminpassword
+      - FILE__LDAP_PASS=/run/secrets/ldap_admin_pwd
       - LDAP_USER_FILTER=(uid=$${user})
       - LDAP_ID_ATTRIBUTE=uid
       - LDAP_EMAIL_ATTRIBUTE=mail
       - LDAP_DISPLAY_NAME_ATTRIBUTE=cn
       - LDAP_VERSION=3
+    secrets:
+      - app_key
+      - db_bookstack_pwd
+      - ldap_admin_pwd
     volumes:
       - bookstack_app_data_vanilla:/config
     ports:
@@ -82,10 +91,12 @@ services:
       - MYSQL_HOST=mariadb
       - MYSQL_DATABASE=nextcloud
       - MYSQL_USER=nextcloud
-      - MYSQL_PASSWORD=mot_de_passe
+      - MYSQL_PASSWORD_FILE=/run/secrets/db_nextcloud_pwd
       - NEXTCLOUD_TRUSTED_DOMAINS=nextcloud.mongroupe.local
       - OVERWRITEPROTOCOL=https
       - OVERWRITEHOST=nextcloud.mongroupe.local
+    secrets:
+      - db_nextcloud_pwd
     volumes:
       - nextcloud_data:/var/www/html
     depends_on:
@@ -107,6 +118,17 @@ services:
       - phpldapadmin
     restart: unless-stopped    
 
+secrets:
+  db_root_pwd:
+    file: ./secrets/db_root_pwd.txt
+  db_bookstack_pwd:
+    file: ./secrets/db_bookstack_pwd.txt
+  db_nextcloud_pwd:
+    file: ./secrets/db_nextcloud_pwd.txt
+  ldap_admin_pwd:
+    file: ./secrets/ldap_admin_pwd.txt
+  app_key:
+    file: ./secrets/app_key.txt
 
 volumes:
   bookstack_db_data_vanilla:
