@@ -86,4 +86,5 @@ En migrant vers l'infrastructure locale, nous avons rencontré des erreurs `bind
 
 **4. Le ciblage de la base utilisateur dans Nextcloud**
 Lors de la configuration LDAP dans l'interface de Nextcloud, bien que la connexion au serveur soit établie, l'application ne trouvait initialement aucun utilisateur.
+
 Solution apportée : Au lieu de laisser Nextcloud chercher à la racine globale de l'annuaire, nous avons explicitement renseigné le chemin de notre unité organisationnelle dans le paramètre du DN de base utilisateur : ou=users,dc=mongroupe,dc=local. Ce ciblage précis a immédiatement permis au système de localiser et de valider nos comptes de test.
