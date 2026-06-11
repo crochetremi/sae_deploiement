@@ -1,4 +1,5 @@
 # Déploiement de BookStack et Nextcloud avec authentification SSO LDAP
+
 **SAÉ Déploiement d’une application collaborative - Rémi Crochet et Ronan Fisson**
 
 ---
@@ -11,15 +12,20 @@ L'annuaire est organisé comme un arbre (DIT - Directory Information Tree). Chaq
 
 ---
 
-## 2. Architecture du Déploiement (Infrastructure Locale)
+## 2. Architecture du Déploiement (Infrastructure Locale & Sécurisée)
 
-Dans un premier temps, nous avions relié BookStack au serveur de test public `ldap.forumsys.com`. Pour garantir la sécurité, la robustesse et l'autonomie totale de notre application, nous avons fait évoluer notre infrastructure en déployant **notre propre annuaire LDAP local** et en ajoutant un service de Cloud.
+Dans un premier temps, nous avions relié BookStack au serveur de test public `ldap.forumsys.com`. Pour garantir la sécurité, la robustesse et l'autonomie totale de notre application, nous avons fait évoluer notre infrastructure en déployant **notre propre annuaire LDAP local**, un service de Cloud (Nextcloud), et un **Reverse Proxy (Nginx)** pour sécuriser les échanges.
 
-Nous avons structuré notre projet de manière professionnelle avec des dossiers dédiés pour nos scripts d'automatisation :
+Nous avons structuré notre projet de manière professionnelle avec des dossiers dédiés :
 
 ```text
 .
 ├── docker-compose.yml
+├── nginx/
+│   ├── certs/
+│   │   ├── selfsigned.crt
+│   │   └── selfsigned.key
+│   └── nginx.conf
 ├── script/
 │   ├── start.sh
 │   └── structure.ldif
@@ -28,17 +34,36 @@ Nous avons structuré notre projet de manière professionnelle avec des dossiers
 
 ```
 
-Notre fichier `docker-compose.yml` orchestre désormais 5 conteneurs interconnectés :
+Notre infrastructure orchestre désormais **6 conteneurs interconnectés** :
 
-1. **MariaDB** : La base de données relationnelle (qui héberge à la fois les bases de BookStack et Nextcloud).
-2. **OpenLDAP** (`osixia/openldap`) : Notre serveur d'annuaire local, configuré sur le domaine `dc=mongroupe,dc=local`.
-3. **phpLDAPadmin** (`osixia/phpldapadmin`) : L'interface web d'administration de l'annuaire (Port `8081`).
-4. **BookStack** : L'application web collaborative (Port `8080`).
-5. **Nextcloud** : Le service de stockage et de partage de fichiers (Port `8082`).
+1. **MariaDB** : La base de données relationnelle mutualisée pour BookStack et Nextcloud (Réseau interne).
+2. **OpenLDAP** : Notre serveur d'annuaire local, configuré sur `dc=mongroupe,dc=local`.
+3. **BookStack** : L'application web collaborative (Isolée sur le réseau interne).
+4. **Nextcloud** : Le service de stockage et de partage de fichiers (Isolé sur le réseau interne).
+5. **phpLDAPadmin** : L'interface web d'administration de l'annuaire (Isolée sur le réseau interne).
+6. **Nginx (Reverse Proxy)** : Le point d'entrée public de notre serveur.
 
 ---
 
-## 3. Déploiement et Automatisation de l'Infrastructure
+## 3. Reverse Proxy, Sécurité et HTTPS (Nginx)
+
+Afin de simuler un environnement de production réaliste, nous avons déployé un proxy inverse Nginx. Son rôle est de regrouper nos services derrière un point d'entrée unique et de chiffrer les communications (HTTPS).
+
+* **Génération des certificats SSL :** En l'absence de domaine public, nous avons généré nos propres certificats auto-signés (`openssl req -x509...`) stockés dans le dossier `nginx/certs/`.
+* **Routage et Virtual Hosts :** Le fichier `nginx.conf` analyse l'URL demandée par l'utilisateur et redirige le trafic vers le bon conteneur Docker de manière transparente. Nginx force également la redirection du trafic HTTP (port 80) vers HTTPS (port 443).
+* **Configuration applicative :** Les applications ont été reconfigurées pour être "conscientes" du proxy. BookStack utilise la variable `APP_URL=https://bookstack.mongroupe.local`, et Nextcloud s'appuie sur les variables `OVERWRITEPROTOCOL` et `OVERWRITEHOST` pour générer des liens sécurisés.
+* **Résolution DNS Locale :** Puisque nos noms de domaine (`.local`) n'existent pas sur Internet, nous avons modifié le fichier `/etc/hosts` de la machine cliente pour assurer la résolution locale :
+`127.0.0.1 bookstack.mongroupe.local nextcloud.mongroupe.local phpldapadmin.mongroupe.local`
+
+**Accès aux services :**
+
+* `https://bookstack.mongroupe.local`
+* `https://nextcloud.mongroupe.local`
+* `https://phpldapadmin.mongroupe.local` 
+
+---
+
+## 4. Déploiement et Automatisation de l'Infrastructure
 
 Pour garantir un déploiement propre et reproductible sans intervention manuelle à l'intérieur des conteneurs, nous avons automatisé la création des bases de données et la population de l'annuaire LDAP.
 
@@ -48,7 +73,7 @@ Le conteneur MariaDB crée nativement la base `bookstackapp` grâce aux variable
 
 ### Automatisation du LDAP et Lancement
 
-Plutôt que de taper une simple commande `docker compose up`, nous avons créé le script d'initialisation `script/start.sh`. Ce script se charge de d'exécuter la commande `ldapadd` depuis la machine hôte pour injecter automatiquement notre fichier `structure.ldif`. Ce fichier crée l'arborescence (`ou=users`, `ou=groups`) et génère 3 scientifiques de test (Einstein, Curie, Turing).
+Plutôt que de taper une simple commande `docker compose up`, nous avons créé le script d'initialisation `script/start.sh`. Ce script se charge d'exécuter la commande `ldapadd` depuis la machine hôte pour injecter automatiquement notre fichier `structure.ldif`. Ce fichier crée l'arborescence (`ou=users`, `ou=groups`) et génère 3 scientifiques de test (Einstein, Curie, Turing).
 
 ### Lancer l'infrastructure (Premier démarrage)
 
@@ -59,14 +84,12 @@ chmod +x start.sh
 
 ```
 
-*(Pour l'administration quotidienne, nous utilisons l'interface graphique **phpLDAPadmin** sur le port `8081` pour consulter l'annuaire utilisateurs en quelques clics, pratique pour visualiser la structure de données).*
-
 ---
 
-## 4. Intégration LDAP dans Nextcloud
+## 5. Intégration LDAP dans Nextcloud
 
 L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'administration, en paramétrant finement les filtres de recherche pour correspondre à notre structure `ou=users,dc=mongroupe,dc=local`.
-Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser quelle est exactement la configuration que nous avons utilisé pour lier LDAP.
+Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser quelle est exactement la configuration que nous avons utilisée pour lier LDAP.
 
 * **Filtre des utilisateurs :** `(&(objectclass=inetOrgPerson))` (Permet à Nextcloud de compter le nombre d'utilisateurs humains valides dans l'annuaire).
 * **Filtre de connexion :** `(&(&(objectclass=inetOrgPerson))(uid=%uid))` (Permet de faire correspondre la saisie de l'utilisateur avec l'attribut `uid` du LDAP).
@@ -74,7 +97,7 @@ Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser q
 
 ---
 
-## 5. Observations et Difficultés rencontrées
+## 6. Observations et Difficultés rencontrées
 
 **1. Le filtre de recherche LDAP BookStack erroné**
 Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Remplacer cette variable par `${user}` a résolu le problème (en n'oubliant pas de doubler le symbole `$${user}` dans le `.yml` pour Docker).
@@ -87,5 +110,8 @@ En migrant vers l'infrastructure locale, nous avons rencontré des erreurs `bind
 
 **4. Le ciblage de la base utilisateur dans Nextcloud**
 Lors de la configuration LDAP dans l'interface de Nextcloud, bien que la connexion au serveur soit établie, l'application ne trouvait initialement aucun utilisateur.
+*Solution apportée :* Au lieu de laisser Nextcloud chercher à la racine globale de l'annuaire, nous avons explicitement renseigné le chemin de notre unité organisationnelle dans le paramètre du DN de base utilisateur : `ou=users,dc=mongroupe,dc=local`. Ce ciblage précis a immédiatement permis au système de localiser et de valider nos comptes de test.
 
-Solution apportée : Au lieu de laisser Nextcloud chercher à la racine globale de l'annuaire, nous avons explicitement renseigné le chemin de notre unité organisationnelle dans le paramètre du DN de base utilisateur : ou=users,dc=mongroupe,dc=local. Ce ciblage précis a immédiatement permis au système de localiser et de valider nos comptes de test.
+**5. Résolution DNS locale et sécurité des navigateurs (DoH)**
+Lors de la configuration de Nginx, les domaines virtuels `.local` définis dans le fichier `/etc/hosts` de la machine n'étaient pas toujours reconnus par les navigateurs web, renvoyant une erreur "Adresse introuvable" malgré un terminal réussissant le "ping".
+*Solution apportée :* Nous avons identifié que la fonctionnalité de sécurité "DNS over HTTPS" (DoH) de Firefox contournait le fichier `hosts` local pour interroger directement des serveurs DNS publics. Désactiver cette option dans le navigateur a permis de rétablir le routage Nginx local.
