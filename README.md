@@ -17,7 +17,7 @@ Dans un premier temps, nous avions relié BookStack au serveur de test public `l
 
 Nous avons structuré notre projet de manière professionnelle avec des dossiers dédiés :
 
-![Architecture du projet](img/architecture.png)
+![Architecture du projet](documents/img/architecture.png)
 
 Notre infrastructure orchestre désormais **6 conteneurs interconnectés** :
 
@@ -100,7 +100,7 @@ Cet outil interroge nos services en temps réel à travers notre réseau virtuel
 
 Voici un aperçu de notre tableau de bord de supervision en action :
 
-![Tableau de bord Uptime Kuma affichant l'état des services locaux](img/kuma/kuma.png)
+![Tableau de bord Uptime Kuma affichant l'état des services locaux](documents/img/kuma/kuma.png)
 
 ---
 
