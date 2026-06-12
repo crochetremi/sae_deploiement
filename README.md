@@ -1,5 +1,4 @@
 # Déploiement de BookStack et Nextcloud avec authentification SSO LDAP
-
 **SAÉ Déploiement d’une application collaborative - Rémi Crochet et Ronan Fisson**
 
 ---
@@ -18,25 +17,7 @@ Dans un premier temps, nous avions relié BookStack au serveur de test public `l
 
 Nous avons structuré notre projet de manière professionnelle avec des dossiers dédiés :
 
-```text
-.
-├── backups/               # Dossier généré automatiquement pour les sauvegardes
-├── docker-compose.yml
-├── nginx/
-│   ├── certs/
-│   │   ├── selfsigned.crt
-│   │   └── selfsigned.key
-│   └── nginx.conf
-├── script/
-│   ├── backup.sh
-│   ├── restore.sh
-│   ├── start.sh
-│   └── structure.ldif
-├── secrets/               # Mots de passe et clés
-└── sql/
-    └── init_nextcloud.sql
-
-```
+![Architecture du projet](img/architecture.png)
 
 Notre infrastructure orchestre désormais **6 conteneurs interconnectés** :
 
@@ -111,6 +92,16 @@ Afin de garantir la pérennité des données, nous avons conçu deux scripts bas
 | **`sae_deploiement_openldap_db_data_vanilla`** | OpenLDAP | Les données de l'annuaire (l'arbre DIT, les utilisateurs complets, les groupes et les mots de passe hachés). | **Acceptable (Reconstructible).** *Normalement critique*, mais grâce au script `start.sh` et `structure.ldif`, ce volume se recrée automatiquement. |
 | **`sae_deploiement_openldap_conf_data_vanilla`** | OpenLDAP | Fichiers de configuration interne du serveur LDAP. | **Acceptable (Reconstructible).** Ces fichiers sont générés automatiquement par l'image Docker au démarrage. |
 
+## 7. Supervision de l'infrastructure (Uptime Kuma)
+
+Afin de s'assurer de la disponibilité de nos services et d'être alertés en cas de panne, nous avons déployé un conteneur dédié à la supervision : **Uptime Kuma**. 
+
+Cet outil interroge nos services en temps réel à travers notre réseau virtuel sécurisé pour vérifier qu'ils répondent correctement.
+
+Voici un aperçu de notre tableau de bord de supervision en action :
+
+![Tableau de bord Uptime Kuma affichant l'état des services locaux](img/kuma/kuma.png)
+
 ---
 
 ## 7. Observations et Difficultés rencontrées
@@ -138,3 +129,7 @@ L'implémentation des Docker Secrets nécessite une syntaxe différente selon le
 **7. La condition de course (Race Condition) lors de l'auto-installation Nextcloud**
 Bien que configuré pour s'installer silencieusement ("Zero-Touch"), Nextcloud démarre parfois plus vite que le temps nécessaire à MariaDB pour s'initialiser. Dans ce cas, Nextcloud échoue en silence et affiche la page d'installation manuelle par défaut.
 *Solution apportée :* Effectuer un nettoyage complet du volume Nextcloud puis le redémarrer permet de relancer la tentative d'installation automatique une fois la base de données prête.
+
+**8. Monitoring avec Uptime Kuma et l'isolement DNS Docker**
+Lors du déploiement de sondes Uptime Kuma pour superviser la disponibilité de nos services, les requêtes échouaient systématiquement (`ENOTFOUND`), malgré un fonctionnement correct sur le navigateur hôte.
+*Solution apportée :* Le conteneur Uptime Kuma évoluant dans son propre sous-réseau hermétique, il ignorait le fichier `hosts` local de la machine. Nous avons dû forcer la résolution DNS interne en déclarant explicitement nos noms de domaine virtuels `.local` dans les attributs réseau de Docker (`aliases`), permettant ainsi à Uptime Kuma de communiquer correctement avec le Reverse Proxy Nginx.
