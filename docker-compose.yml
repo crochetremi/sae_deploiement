@@ -121,6 +121,19 @@ services:
       - nextcloud
       - phpldapadmin
     restart: unless-stopped    
+    networks:
+      default:
+        aliases:
+          - bookstack.mongroupe.local
+          - nextcloud.mongroupe.local
+          - phpldapadmin.mongroupe.local
+
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    volumes:
+    - uptime_kuma_data:/app/data
+    ports:
+    - "3001:3001"
 
 secrets:
   db_root_pwd:
@@ -142,3 +155,4 @@ volumes:
   openldap_conf_data_vanilla:
   openldap_db_data_vanilla:
   nextcloud_data:
+  uptime_kuma_data:
