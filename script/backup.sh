@@ -13,8 +13,8 @@ for VOLUME in sae_deploiement_bookstack_db_data_vanilla sae_deploiement_nextclou
     echo "[OK] ${VOLUME} sauvegardé"
 done
 
-docker compose exec -T mariadb \
+docker exec bookstack_db \
     mariadb-dump -u root -p"$(cat ./secrets/db_root_pwd.txt)" --all-databases \
     > "${BACKUP_DIR}/all_databases.sql"
 
-echo "Sauvegarde terminée : ${BACKUP_DIR}"
+echo "Sauvegarde finie : ${BACKUP_DIR}"
