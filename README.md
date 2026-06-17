@@ -19,7 +19,7 @@ Nous avons structuré notre projet de manière professionnelle avec des dossiers
 
 ![Architecture du projet](documents/img/architecture.png)
 
-Notre infrastructure orchestre désormais **6 conteneurs interconnectés** :
+Notre infrastructure orchestre désormais **7 conteneurs interconnectés** :
 
 1. **MariaDB** : La base de données relationnelle mutualisée pour BookStack et Nextcloud (Réseau interne).
 2. **OpenLDAP** : Notre serveur d'annuaire local, configuré sur `dc=mongroupe,dc=local`.
@@ -27,6 +27,7 @@ Notre infrastructure orchestre désormais **6 conteneurs interconnectés** :
 4. **Nextcloud** : Le service de stockage et de partage de fichiers (Isolé sur le réseau interne).
 5. **phpLDAPadmin** : L'interface web d'administration de l'annuaire (Isolée sur le réseau interne).
 6. **Nginx (Reverse Proxy)** : Le point d'entrée public de notre serveur.
+7. **Uptime Kuma (Supervision)** : L'application Web de surveillance des services.
 
 ---
 
@@ -48,31 +49,31 @@ Afin de simuler un environnement de production réaliste, nous avons déployé u
 
 ---
 
-## 4. Déploiement et Automatisation de l'Infrastructure
+## 4. Tutoriel de Déploiement
 
-Pour garantir un déploiement propre et reproductible sans intervention manuelle à l'intérieur des conteneurs, nous avons poussé l'automatisation à son maximum (*Infrastructure as Code*).
+Pour garantir un déploiement propre et reproductible, voici la marche à suivre étape par étape :
 
-### Gestion Sécurisée des Mots de Passe (Docker Secrets)
+1. **Démarrage de l'infrastructure :** Lancer les conteneurs en arrière-plan avec la commande :
+```bash
+   docker compose up -d
 
-Pour éviter de stocker des informations sensibles en clair dans le fichier `docker-compose.yml`, nous avons implémenté les **Docker Secrets**. Les mots de passe sont stockés dans des fichiers texte isolés et injectés en toute sécurité directement dans la RAM des conteneurs (ex: `/run/secrets/db_root_pwd`).
+```
 
-### Automatisation de la Base de Données
+2. **Initialisation :** Patienter quelques instants que tous les services soient pleinement opérationnels (notamment le temps que MariaDB s'initialise et que Nextcloud termine son installation silencieuse).
+3. **Injection de l'annuaire LDAP :** Exécuter le script dédié pour peupler l'arborescence et créer les utilisateurs de test :
 
-Le conteneur MariaDB crée nativement la base `bookstackapp` via ses variables d'environnement. Pour Nextcloud, nous avons monté le fichier `sql/init_nextcloud.sql` dans le dossier `/docker-entrypoint-initdb.d/`. Au premier lancement, MariaDB lit ce script et crée automatiquement la base et l'utilisateur `nextcloud`.
+```bash
+   ./script/ldap.sh
 
-### Installation "Zero-Touch" de Nextcloud
+```
 
-Afin d'éviter d'avoir à remplir la page d'installation manuelle de Nextcloud, nous avons injecté les variables `NEXTCLOUD_ADMIN_USER` et `NEXTCLOUD_ADMIN_PASSWORD_FILE`. Cela permet à l'application de s'installer silencieusement en arrière-plan et de se lier à la base de données automatiquement au premier démarrage.
-
-### Automatisation du LDAP et Lancement
-
-Plutôt que de taper une simple commande `docker compose up`, nous avons créé le script `script/start.sh`. Il exécute la commande `ldapadd` depuis la machine hôte pour injecter notre fichier `structure.ldif`. Ce fichier crée l'arborescence (`ou=users`, `ou=groups`) et génère 3 scientifiques de test (Einstein, Curie, Turing).
+4. **Connexion :** L'infrastructure est prête. Vous pouvez vous connecter aux différentes interfaces via votre navigateur (ex: `https://bookstack.mongroupe.local`).
 
 ---
 
 ## 5. Intégration LDAP dans Nextcloud
 
-L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'administration, en paramétrant finement les filtres de recherche. Nous avons ajouté un dossier `ldap_nextcloud_images` qui permet de visualiser la configuration exacte utilisée.
+L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'administration, en paramétrant finement les filtres de recherche. Nous avons ajouté un dossier `img/ldap_nextcloud_images` qui permet de visualiser la configuration exacte utilisée.
 
 * **Filtre des utilisateurs :** `(&(objectclass=inetOrgPerson))` (Permet à Nextcloud de compter le nombre d'utilisateurs humains valides dans l'annuaire).
 * **Filtre de connexion :** `(&(&(objectclass=inetOrgPerson))(uid=%uid))` (Fait correspondre la saisie de l'utilisateur avec l'attribut `uid` du LDAP).
@@ -80,9 +81,22 @@ L'intégration de l'annuaire dans Nextcloud s'effectue via son interface d'admin
 
 ---
 
-## 6. Sauvegarde et Restauration (Disaster Recovery Plan)
+## 6. Sauvegarde et Restauration
 
-Afin de garantir la pérennité des données, nous avons conçu deux scripts bash (`backup.sh` et `restore.sh`). Ces scripts utilisent un conteneur temporaire `alpine` pour archiver (au format `.tar.gz`) les volumes critiques montés en lecture seule (`ro`), et les stocker de manière horodatée dans un dossier local `backups/`.
+Afin de garantir la pérennité des données, nous avons conçu deux scripts bash (`backup.sh` et `restore.sh`).
+
+**Sauvegarde (Backup à chaud) :**
+La sauvegarde s'effectue avec l'infrastructure entièrement allumée. Le script archive les volumes et extrait un dump SQL à la volée.
+
+> ⚠️ **Analyse critique :** Effectuer une sauvegarde globale "à chaud" de tous les volumes en même temps comporte un risque d'incohérence si une donnée est écrite au moment exact de la sauvegarde. Dans un contexte de production strict, une sauvegarde séquentielle volume par volume ou avec un arrêt temporaire des services serait préférable.
+
+**Restauration (Restore) :**
+Le script de restauration s'occupe de tout remettre en ordre automatiquement (arrêt des services, suppression des volumes corrompus, extraction des archives et redémarrage). Il est obligatoire de lui préciser le chemin du backup ciblé lors de son exécution :
+
+```bash
+sudo ./script/restore.sh ./backups/NOM_DU_BACKUP/
+
+```
 
 | Nom du volume | Service associé | Type de données stockées | Criticité |
 | --- | --- | --- | --- |
@@ -92,19 +106,21 @@ Afin de garantir la pérennité des données, nous avons conçu deux scripts bas
 | **`sae_deploiement_openldap_db_data_vanilla`** | OpenLDAP | Les données de l'annuaire (l'arbre DIT, les utilisateurs complets, les groupes et les mots de passe hachés). | **Acceptable (Reconstructible).** *Normalement critique*, mais grâce au script `start.sh` et `structure.ldif`, ce volume se recrée automatiquement. |
 | **`sae_deploiement_openldap_conf_data_vanilla`** | OpenLDAP | Fichiers de configuration interne du serveur LDAP. | **Acceptable (Reconstructible).** Ces fichiers sont générés automatiquement par l'image Docker au démarrage. |
 
+---
+
 ## 7. Supervision de l'infrastructure (Uptime Kuma)
 
-Afin de s'assurer de la disponibilité de nos services et d'être alertés en cas de panne, nous avons déployé un conteneur dédié à la supervision : **Uptime Kuma**. 
+Afin de s'assurer de la disponibilité de nos services et d'être alertés en cas de panne, nous avons déployé un conteneur dédié à la supervision : **Uptime Kuma**.
 
 Cet outil interroge nos services en temps réel à travers notre réseau virtuel sécurisé pour vérifier qu'ils répondent correctement.
 
 Voici un aperçu de notre tableau de bord de supervision en action :
 
-![Tableau de bord Uptime Kuma affichant l'état des services locaux](documents/img/kuma/kuma.png)
+![Supervision Kuma](documents/img/kuma/kuma.png)
 
 ---
 
-## 7. Observations et Difficultés rencontrées
+## 8. Observations et Difficultés rencontrées
 
 **1. Le filtre de recherche LDAP BookStack erroné**
 Le sujet indique d'utiliser la variable `(uid=${input})`. Cependant, la documentation de BookStack attend la syntaxe `(uid=${user})`. Remplacer cette variable a résolu le problème (en n'oubliant pas de doubler le symbole `$${user}` dans le `.yml` pour l'échappement Docker).
@@ -133,3 +149,11 @@ Bien que configuré pour s'installer silencieusement ("Zero-Touch"), Nextcloud d
 **8. Monitoring avec Uptime Kuma et l'isolement DNS Docker**
 Lors du déploiement de sondes Uptime Kuma pour superviser la disponibilité de nos services, les requêtes échouaient systématiquement (`ENOTFOUND`), malgré un fonctionnement correct sur le navigateur hôte.
 *Solution apportée :* Le conteneur Uptime Kuma évoluant dans son propre sous-réseau hermétique, il ignorait le fichier `hosts` local de la machine. Nous avons dû forcer la résolution DNS interne en déclarant explicitement nos noms de domaine virtuels `.local` dans les attributs réseau de Docker (`aliases`), permettant ainsi à Uptime Kuma de communiquer correctement avec le Reverse Proxy Nginx.
+
+**9. Conflits de contexte d'exécution (`sudo` vs utilisateur) dans les scripts de sauvegarde**
+Lors de l'exécution initiale du script `backup.sh` avec les droits administrateur (`sudo`), l'export SQL échouait avec l'erreur `service "mariadb" is not running`, bien que le conteneur soit actif.
+*Solution apportée :* L'utilisateur `root` ne partageant pas le même environnement de projet Docker Compose que notre utilisateur courant, nous avons abandonné la commande `docker compose exec` au profit de `docker exec` couplé au nom absolu du conteneur. Cela permet au script d'interagir directement avec le moteur Docker, quel que soit l'utilisateur qui l'exécute.
+
+**10. Plantages Bash et conflits de nommage lors de la restauration**
+L'élaboration du script de restauration (`restore.sh`) a révélé des instabilités liées à la syntaxe Bash stricte et au comportement de Docker en cas de valeurs nulles (générant des arguments `-v` invalides qui faisaient planter le démon Docker). Par ailleurs, lancer `docker compose down` en mode `sudo` ne supprimait pas les anciens conteneurs, générant des conflits de nom lors de la restauration.
+*Solution apportée :* Nous avons sécurisé le script en intégrant des variables de validation strictes (`if [ -z "$1" ]`) pour empêcher les exécutions à vide. Afin de garantir un environnement de restauration "Zero-Trust", nous avons codé la destruction inconditionnelle et forcée des anciens conteneurs via `docker rm -f` avant de procéder à la recréation de l'infrastructure.

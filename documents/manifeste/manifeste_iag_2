@@ -1,12 +1,27 @@
-# Utilisation de l'IAg dans la deuxième partie de la SAE
+# Manifeste sur l'utilisation de l'IAg dans la SAÉ
+
+Dans le cadre de cette SAÉ, nous avons utilisé l'Intelligence Artificielle générative (IAg) comme un outil d'assistance technique, de compréhension théorique et de débogage. Conformément aux consignes de l'IUT, l'IA n'a pas réalisé le projet à notre place, mais a agi comme un "tuteur" pour nous aider à surmonter les blocages inhérents à l'administration système. Voici le détail de nos sollicitations :
 
 ### A. Debug et analyse de Logs
-L'apport principal de l'IA dans notre SAE a été la traduction et la résolution de codes d'erreurs souvent cryptiques dans les environnements Linux et Docker. 
+
+L'apport principal de l'IA dans notre SAÉ a été la traduction et la résolution de codes d'erreurs souvent cryptiques dans les environnements Linux et Docker.
 
 * **Gestion du cache Nextcloud :** Compréhension des erreurs de l'interface graphique de Nextcloud ("Impossible de trouver la fonction souhaitée") et identification des problèmes de conflits de cache LDAP. L'IA nous a guidés vers l'utilisation de la ligne de commande native `occ` pour forcer la mise à jour des règles.
 * **Conflits Docker :** Diagnostic des erreurs de type `bind: address already in use` et identification des processus orphelins (zombies) ou des volumes de bases de données corrompus conservant d'anciennes configurations.
 
 ### B. Compréhension Théorique
+
 La configuration d'un annuaire OpenLDAP requiert une syntaxe extrêmement stricte. L'IA a agi comme un tuteur pour nous expliquer :
+
 * La différence entre les filtres de recherche globaux (`(&(objectclass=inetOrgPerson))`) et les filtres de connexion spécifiques (`(&(&(objectclass=inetOrgPerson))(uid=%uid))`).
 * La hiérarchisation de l'arbre LDAP (DIT) et l'importance de cibler les bonnes Unités Organisationnelles (`ou=users`).
+* L'isolement DNS des conteneurs : Compréhension du fonctionnement hermétique des réseaux virtuels Docker face au fichier `hosts` de la machine, ce qui nous a permis de résoudre les problèmes de sonde (`ENOTFOUND`) avec Uptime Kuma.
+
+### C. Scripting Bash et Automatisation (Sauvegarde & Restauration)
+
+La mise en place du plan de backup via les scripts `backup.sh` et `restore.sh` a nécessité l'aide de l'IA pour comprendre le comportement conjoint de Bash et du démon Docker :
+
+* **Contexte d'exécution (`sudo` vs Utilisateur) :** Lors du développement de la sauvegarde SQL, l'IA nous a permis de comprendre pourquoi `docker compose exec` échouait en étant lancé via `sudo` (perte du contexte de projet de l'utilisateur). Cela nous a conduits à utiliser des ciblages absolus (`docker exec`).
+* **Gestion stricte des chemins Docker :** Explication de l'erreur `invalid volume specification`, liée à l'incapacité de Docker à interpréter des chemins relatifs (`./backups`). L'IA nous a orientés vers l'utilisation des variables d'environnement dynamiques (`$PWD` et `realpath`).
+* **Robustesse de la syntaxe Bash :** Assistance sur des erreurs de syntaxe spécifiques à Bash, notamment l'interdiction stricte des blocs `else` vides, et l'intégration de conditions de garde (`if [ -z "$1" ]`) pour éviter les crashs de script en cas d'oubli d'arguments.
+* **Résolution des conflits de nommage à la restauration :** Pour contourner l'incapacité de `docker compose down` (exécuté en root) à arrêter nos conteneurs utilisateurs, l'IA nous a aidés à concevoir une séquence de destruction forcée par nom absolu (`docker rm -f`), garantissant un environnement de restauration sain.
