@@ -12,7 +12,7 @@ if [ ! -d "$BACKUP_DIR" ]; then
 fi
 
 docker compose down || true
-docker rm -f bookstack_db nextcloud bookstack_app bookstack_ldap bookstack_ldap_admin nginx_proxy uptime-kuma 2>/dev/null || true
+docker rm -f bookstack_db nextcloud bookstack_app bookstack_ldap bookstack_ldap_admin nginx_proxy 2>/dev/null || true
 
 VOLUMES=(
     "sae_deploiement_bookstack_db_data_vanilla"
