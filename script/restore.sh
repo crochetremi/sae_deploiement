@@ -1,20 +1,43 @@
 #!/bin/bash
 set -e
 
-BACKUP_DIR="$1"
-VOLUME="sae_deploiement_nextcloud_data"
+if [ -z "$1" ]; then
+    exit 1
+fi
 
-docker compose down
+BACKUP_DIR="$(realpath "$1")"
 
-docker volume rm "${VOLUME}"
-docker volume create "${VOLUME}"
+if [ ! -d "$BACKUP_DIR" ]; then
+    exit 1
+fi
 
-docker run --rm \
-    -v "${VOLUME}:/dest" \
-    -v "$(realpath "$BACKUP_DIR"):/backup:ro" \
-    alpine \
-    sh -c "cd /dest && tar xzf /backup/${VOLUME}.tar.gz"
+docker compose down || true
+docker rm -f bookstack_db nextcloud bookstack_app bookstack_ldap bookstack_ldap_admin nginx_proxy uptime-kuma 2>/dev/null || true
+
+VOLUMES=(
+    "sae_deploiement_bookstack_db_data_vanilla"
+    "sae_deploiement_nextcloud_data"
+    "sae_deploiement_bookstack_app_data_vanilla"
+    "sae_deploiement_openldap_db_data_vanilla"
+    "sae_deploiement_openldap_conf_data_vanilla"
+)
+
+for VOLUME in "${VOLUMES[@]}"; do
+    FILE_PATH="$BACKUP_DIR/${VOLUME}.tar.gz"
+
+    if [ -f "$FILE_PATH" ]; then
+        docker volume rm -f "${VOLUME}" 2>/dev/null || true
+        docker volume create "${VOLUME}"
+
+        docker run --rm \
+            -v "${VOLUME}:/dest" \
+            -v "${BACKUP_DIR}:/backups:ro" \
+            alpine \
+            sh -c "cd /dest && tar xzf /backups/${VOLUME}.tar.gz"
+            
+    fi
+done
 
 docker compose up -d
 
-echo "Restauration terminée depuis : ${BACKUP_DIR}"
+echo "Restauration totale terminée depuis : ${BACKUP_DIR}"
